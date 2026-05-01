@@ -10,7 +10,7 @@ keywords = ["procrustes", "alignment", "linear-algebra", "shape-analysis", "faer
 categories = ["science", "algorithms", "mathematics"]
 readme = "README.md"
 exclude = ["PUBLICATION_SPEC.md"]
-repository = "https://github.com/pawlenartowicz/orthogonal_procrustes"
+repository = "https://github.com/pawlenartowicz/procrustes"
 
 [dependencies]
 faer = "0.24"

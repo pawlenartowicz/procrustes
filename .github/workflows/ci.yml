@@ -3,9 +3,11 @@ on: [push, pull_request]
 jobs:
   check:
     runs-on: ubuntu-latest
+    # beta is informational — upstream rustc regressions shouldn't gate merges.
+    continue-on-error: ${{ matrix.rust == 'beta' }}
     strategy:
       matrix:
-        rust: [stable, "1.85"]
+        rust: [stable, beta, "1.85"]
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
