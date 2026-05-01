@@ -11,7 +11,7 @@ procrustes = "0.1"
 
 ## When to use
 
-- **`orthogonal`** — closed-form Schönemann SVD; cost dominated by the `K×K` SVD. Use whenever your alignment is a continuous rotation / reflection.
+- **`orthogonal`** — closed-form Schönemann SVD; `O(M·K² + K³)`. Use whenever your alignment is a continuous rotation / reflection.
 - **`signed_permutation`** — brute-force `O(K!·K)` enumeration with optimal sign per permutation. Practical up to about `K ≤ 10`; for `K ≳ 12` decompose by hand. Use when columns are abstractly indexed (PLS components, ICA sources, eigenmaps) and you need a discrete match rather than a rotation.
   - *TODO (planned, future minor version):* Hungarian-algorithm `O(K³)` fast path to lift the `K ≤ 10` ceiling. The cost matrix `C[i, j] = -|⟨a[:, i], reference[:, j]⟩|` is exactly a linear assignment problem after the closed-form sign reduction.
 
@@ -21,7 +21,7 @@ Both functions return a transform `T` such that `a · T ≈ reference` minimizes
 
 ## faer coupling
 
-`MatRef<'_, f64>` and `Mat<f64>` appear in the public API. The crate re-exports them as `procrustes::{Mat, MatRef}`, so consumers do not need a separate `faer` dependency. Until faer reaches 1.0, **any faer major bump is a procrustes major bump** — the version pin is exact.
+`MatRef<'_, f64>` and `Mat<f64>` appear in the public API. The crate re-exports them as `procrustes::{Mat, MatRef}`, so consumers do not need a separate `faer` dependency. The pin is `faer = "0.24"` — caret-equivalent within the minor series — so patch bumps unify with downstream `^0.24` users automatically. Until faer reaches 1.0, **any faer minor bump (= breaking, pre-1.0) is a procrustes major bump**: a Dependabot watcher proposes the upgrade in a PR, and the bit-parity test in `tests/bit_parity.rs` is the tripwire that flags faer-side numerical drift even when the API still compiles.
 
 ## Example
 

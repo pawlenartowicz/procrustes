@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    versioning-strategy: increase
+    open-pull-requests-limit: 5
+    groups:
+      faer:
+        patterns:
+          - "faer*"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
