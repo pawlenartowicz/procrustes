@@ -111,6 +111,131 @@ fn is_all_finite(x: MatRef<'_, f64>) -> bool {
     true
 }
 
+/// Orthogonal Procrustes restricted to proper rotations (`det(R) = +1`,
+/// `R ∈ SO(K)`).
+///
+/// Identical to [`orthogonal`] except: if the SVD-derived rotation has
+/// `det(R) = -1` (i.e. is a reflection), flip the sign of the last column
+/// of `U` before forming `R`. The returned rotation is then guaranteed
+/// proper at the cost of a typically small increase in residual.
+///
+/// Use this when reflection is physically meaningless (chemistry, physics,
+/// rigid-body alignment) or when sign convention must be preserved across
+/// independent calls.
+///
+/// `scale` in the returned [`OrthogonalAlignment`] is recomputed against
+/// the (possibly flipped) `R`, so [`OrthogonalAlignment::residual_frobenius`]
+/// remains valid downstream.
+///
+/// # Errors
+/// Same as [`orthogonal`]:
+/// [`ProcrustesError::DimensionMismatch`] on shape mismatch,
+/// [`ProcrustesError::EmptyInput`] if either dimension is zero,
+/// [`ProcrustesError::NonFinite`] if `check_finite` is `true` and any input
+/// value is NaN or infinite.
+///
+/// # Examples
+/// ```
+/// use procrustes::Mat;
+/// // a == reference, so the rotation is the identity (det = +1).
+/// let a = Mat::<f64>::from_fn(4, 2, |i, j| if i == j { 1.0 } else { 0.0 });
+/// let aln = procrustes::rotation_only(a.as_ref(), a.as_ref(), true).unwrap();
+/// // Identity is a proper rotation; residual is zero.
+/// assert!(aln.residual_frobenius(a.as_ref(), a.as_ref()) < 1e-10);
+/// ```
+#[allow(clippy::many_single_char_names)]
+pub fn rotation_only(
+    a: MatRef<'_, f64>,
+    reference: MatRef<'_, f64>,
+    check_finite: bool,
+) -> Result<OrthogonalAlignment, ProcrustesError> {
+    let (a_rows, a_cols) = (a.nrows(), a.ncols());
+    let (ref_rows, ref_cols) = (reference.nrows(), reference.ncols());
+
+    if a_rows != ref_rows || a_cols != ref_cols {
+        return Err(ProcrustesError::DimensionMismatch {
+            a_rows,
+            a_cols,
+            ref_rows,
+            ref_cols,
+        });
+    }
+    if a_rows == 0 || a_cols == 0 {
+        return Err(ProcrustesError::EmptyInput);
+    }
+    if check_finite && (!is_all_finite(a) || !is_all_finite(reference)) {
+        return Err(ProcrustesError::NonFinite);
+    }
+
+    let k = a_cols;
+
+    // M = aᵀ · reference  (K × K)
+    let mut m_buf = Mat::<f64>::zeros(k, k);
+    matmul(
+        m_buf.as_mut(),
+        Accum::Replace,
+        a.transpose(),
+        reference,
+        1.0,
+        Par::Seq,
+    );
+
+    // SVD: M = U · diag(s) · Vᵀ. As in `orthogonal`, fall back to a NaN
+    // result on SVD failure rather than panicking.
+    let Ok(svd) = m_buf.as_ref().svd() else {
+        return Ok(OrthogonalAlignment {
+            rotation: Mat::<f64>::from_fn(k, k, |_, _| f64::NAN),
+            scale: f64::NAN,
+        });
+    };
+    let u = svd.U();
+    let v = svd.V();
+
+    // Initial R = U · Vᵀ  (orthogonal, may be reflection or rotation).
+    let mut rotation = Mat::<f64>::zeros(k, k);
+    matmul(
+        rotation.as_mut(),
+        Accum::Replace,
+        u,
+        v.transpose(),
+        1.0,
+        Par::Seq,
+    );
+
+    // Detect reflection via sign of det(R). For an orthogonal R, det = ±1;
+    // partial-pivoting LU (faer's `MatRef::determinant`) is ample.
+    let det = rotation.as_ref().determinant();
+    if det < 0.0 {
+        // Flip sign of the last column of U, then recompute R = U' · Vᵀ.
+        // Materialise U into an owned Mat so we can mutate the column.
+        let last = k - 1;
+        let u_flipped = Mat::<f64>::from_fn(k, k, |i, j| {
+            if j == last { -u[(i, j)] } else { u[(i, j)] }
+        });
+        matmul(
+            rotation.as_mut(),
+            Accum::Replace,
+            u_flipped.as_ref(),
+            v.transpose(),
+            1.0,
+            Par::Seq,
+        );
+    }
+
+    // Recompute scale = trace(M · Rᵀ) = Σ_{i,j} M[i,j] · R[i,j] on the
+    // possibly-flipped R. The cached identity ‖a·R − ref‖² = ‖a‖² + ‖ref‖² − 2·scale
+    // holds for *any* orthogonal R, so OrthogonalAlignment::residual_frobenius
+    // remains valid.
+    let mut scale = 0.0;
+    for i in 0..k {
+        for j in 0..k {
+            scale += m_buf[(i, j)] * rotation[(i, j)];
+        }
+    }
+
+    Ok(OrthogonalAlignment { rotation, scale })
+}
+
 /// Result of [`orthogonal`].
 #[non_exhaustive]
 #[derive(Debug, Clone)]

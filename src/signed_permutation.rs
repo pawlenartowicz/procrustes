@@ -4,6 +4,109 @@ use faer::MatRef;
 
 use crate::ProcrustesError;
 
+/// Result of [`sign_align`].
+///
+/// Mirrors the eager-`residual_frobenius` shape of
+/// [`SignedPermutationAlignment`] for the degenerate identity-permutation
+/// case.
+#[non_exhaustive]
+#[derive(Debug, Clone)]
+pub struct SignAlignment {
+    /// Length-`K` vector of `±1.0`; entry `k` is the sign applied to column
+    /// `k` of `a`.
+    pub signs: Vec<f64>,
+    /// Frobenius distance `‖a · diag(signs) − reference‖_F`. Un-squared,
+    /// matching [`SignedPermutationAlignment::residual_frobenius`]; callers
+    /// who need the squared form take `r.powi(2)`.
+    pub residual_frobenius: f64,
+}
+
+/// Sign-only alignment: for each column `k`, choose `s[k] ∈ {−1, +1}` to
+/// maximise `⟨s[k] · a[:, k], reference[:, k]⟩`. Closed-form, `O(M·K)`.
+///
+/// Use this when columns of `a` are already in the same order as
+/// `reference` and only the per-column sign is arbitrary — the canonical
+/// PLS bootstrap pattern. For a general column-and-sign search, see
+/// [`signed_permutation`].
+///
+/// Tie-breaking: a column dot-product of exactly `0.0` returns `+1.0`.
+///
+/// # Errors
+/// Same as [`crate::orthogonal`]:
+/// [`ProcrustesError::DimensionMismatch`] on shape mismatch,
+/// [`ProcrustesError::EmptyInput`] if either dimension is zero,
+/// [`ProcrustesError::NonFinite`] if `check_finite` is `true` and any input
+/// value is NaN or infinite.
+///
+/// # Examples
+/// ```
+/// use procrustes::Mat;
+/// let reference = Mat::<f64>::from_fn(4, 2, |i, j| if i == j { 1.0 } else { 0.0 });
+/// // a is reference with column 1 sign-flipped.
+/// let a = Mat::<f64>::from_fn(4, 2, |i, j| {
+///     if i == j {
+///         if j == 1 { -1.0 } else { 1.0 }
+///     } else {
+///         0.0
+///     }
+/// });
+/// let aln = procrustes::sign_align(a.as_ref(), reference.as_ref(), true).unwrap();
+/// assert_eq!(aln.signs, vec![1.0, -1.0]);
+/// assert!(aln.residual_frobenius < 1e-12);
+/// ```
+pub fn sign_align(
+    a: MatRef<'_, f64>,
+    reference: MatRef<'_, f64>,
+    check_finite: bool,
+) -> Result<SignAlignment, ProcrustesError> {
+    let (a_rows, a_cols) = (a.nrows(), a.ncols());
+    let (ref_rows, ref_cols) = (reference.nrows(), reference.ncols());
+
+    if a_rows != ref_rows || a_cols != ref_cols {
+        return Err(ProcrustesError::DimensionMismatch {
+            a_rows,
+            a_cols,
+            ref_rows,
+            ref_cols,
+        });
+    }
+    if a_rows == 0 || a_cols == 0 {
+        return Err(ProcrustesError::EmptyInput);
+    }
+    if check_finite && (!is_all_finite(a) || !is_all_finite(reference)) {
+        return Err(ProcrustesError::NonFinite);
+    }
+
+    let m = a_rows;
+    let k = a_cols;
+
+    let mut signs = Vec::with_capacity(k);
+    let mut residual_sq = 0.0;
+    for col in 0..k {
+        let mut dot = 0.0;
+        let mut a_norm_sq = 0.0;
+        let mut ref_norm_sq = 0.0;
+        for row in 0..m {
+            let av = a[(row, col)];
+            let rv = reference[(row, col)];
+            dot += av * rv;
+            a_norm_sq += av * av;
+            ref_norm_sq += rv * rv;
+        }
+        // Tie-breaking: dot exactly 0.0 → +1.0 (documented).
+        let s = if dot >= 0.0 { 1.0_f64 } else { -1.0_f64 };
+        signs.push(s);
+        // ‖a·diag(s) − ref‖² per column = ‖a‖² − 2·s·dot + ‖ref‖²
+        //                                = ‖a‖² − 2·|dot| + ‖ref‖² (since s·dot = |dot|).
+        residual_sq += a_norm_sq - 2.0 * dot.abs() + ref_norm_sq;
+    }
+
+    Ok(SignAlignment {
+        signs,
+        residual_frobenius: residual_sq.max(0.0).sqrt(),
+    })
+}
+
 const BRUTE_FORCE_CUTOFF: usize = 8;
 
 /// Brute-force max-|dot| assignment by `K!` permutation enumeration.

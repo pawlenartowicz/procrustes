@@ -20,8 +20,8 @@ mod lap;
 mod orthogonal;
 mod signed_permutation;
 
-pub use orthogonal::{orthogonal, OrthogonalAlignment};
-pub use signed_permutation::{signed_permutation, SignedPermutationAlignment};
+pub use orthogonal::{orthogonal, rotation_only, OrthogonalAlignment};
+pub use signed_permutation::{sign_align, signed_permutation, SignAlignment, SignedPermutationAlignment};
 
 /// Error variants for [`orthogonal`] and [`signed_permutation`].
 #[non_exhaustive]

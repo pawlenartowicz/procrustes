@@ -18,6 +18,8 @@ procrustes = "0.1"
 
 - **`orthogonal`** — closed-form Schönemann SVD; `O(M·K² + K³)`. Use whenever your alignment is a continuous rotation / reflection.
 - **`signed_permutation`** — exact discrete alignment of columns and per-column signs. Auto-routes by K: brute-force `O(K!·K)` enumeration for `K ≤ 8` (small-K bit-parity preserved), Jonker-Volgenant linear assignment `O(K³)` for `K ≥ 9` on the cost matrix `C[i, j] = -|⟨a[:, i], reference[:, j]⟩|`. Both paths return the global optimum. Use when columns are abstractly indexed (PLS components, ICA sources, eigenmaps) and you need a discrete match rather than a rotation.
+- **`rotation_only`** — orthogonal Procrustes restricted to proper rotations (`det(R) = +1`, `R ∈ SO(K)`). Same SVD path as `orthogonal`; flips the last column of `U` if the SVD-derived rotation is a reflection. Use when reflection is physically meaningless (chemistry, physics, rigid-body alignment) or sign convention must be preserved across independent calls.
+- **`sign_align`** — sign-only alignment, `O(M·K)` closed form. Per-column choice `s[k] = sign(⟨a[:, k], reference[:, k]⟩)`. Use when columns are already in the same canonical order as `reference` and only per-column sign is arbitrary — the typical PLS bootstrap pattern. For a general column-and-sign search, use `signed_permutation`.
 
 ## Convention
 
