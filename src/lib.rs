@@ -16,6 +16,7 @@
 
 pub use faer::{Mat, MatRef};
 
+mod lap;
 mod orthogonal;
 mod signed_permutation;
 

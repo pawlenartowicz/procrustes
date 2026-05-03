@@ -1,21 +1,66 @@
-//! Brute-force signed-permutation alignment.
+//! Signed-permutation alignment.
 
 use faer::MatRef;
 
 use crate::ProcrustesError;
 
-/// Solve `min_{P ∈ S_K, s ∈ {±1}^K} ‖a · P · diag(s) − reference‖_F` by
-/// brute-force enumeration of `K!` permutations (optimal sign per
-/// permutation is closed-form: `s[k] = sign(⟨a[:, p[k]], reference[:, k]⟩)`).
+const BRUTE_FORCE_CUTOFF: usize = 8;
+
+/// Brute-force max-|dot| assignment by `K!` permutation enumeration.
 ///
-/// # Runtime
+/// Returns `assigned` where `assigned[k]` = source-column-of-`a` mapped to
+/// column `k` of `reference`. Uses the score form `Σ_k |dot[p[k], k]|`
+/// as the criterion (equivalent to minimising the Frobenius cost but without
+/// needing `nb`/`nr`). Caller derives signs and residual from `assigned`.
+/// Used directly for `K ≤ BRUTE_FORCE_CUTOFF`; exposed `pub(crate)` so the
+/// parity unit test inside this module (Task 3) can call it directly.
+#[allow(clippy::many_single_char_names)]
+pub(crate) fn brute_force_assign(dot: &[f64], k: usize) -> Vec<usize> {
+    fn heap_permute(buf: &mut Vec<usize>, n: usize, on_perm: &mut dyn FnMut(&[usize])) {
+        if n == 1 {
+            on_perm(buf);
+            return;
+        }
+        for i in 0..n {
+            heap_permute(buf, n - 1, on_perm);
+            if n % 2 == 0 {
+                buf.swap(i, n - 1);
+            } else {
+                buf.swap(0, n - 1);
+            }
+        }
+    }
+
+    let mut perm: Vec<usize> = (0..k).collect();
+    let mut best_assigned: Vec<usize> = perm.clone();
+    let mut best_score = f64::NEG_INFINITY;
+
+    let mut on_perm = |p: &[usize]| {
+        let mut score = 0.0;
+        for kk in 0..k {
+            score += dot[p[kk] * k + kk].abs();
+        }
+        if score > best_score {
+            best_score = score;
+            best_assigned.clear();
+            best_assigned.extend_from_slice(p);
+        }
+    };
+    heap_permute(&mut perm, k, &mut on_perm);
+
+    best_assigned
+}
+
+/// Solve `min_{P ∈ S_K, s ∈ {±1}^K} ‖a · P · diag(s) − reference‖_F` exactly.
 ///
-/// Per-call cost is `O(K! · K)` permutation evaluations after an
-/// `O(K² · M)` precompute of the `aᵀ · reference` dot-product matrix.
-/// Factorial growth means the practical ceiling is roughly `K ≤ 10` for
-/// interactive use; concrete wall-times depend on hardware and compiler
-/// (see the `print_runtime_table` test in this module). For `K ≳ 12`,
-/// prefer manual decomposition.
+/// # Algorithm
+///
+/// For `K ≤ 8`: brute-force enumeration of `K!` permutations
+/// (cost-per-cell `nb[p[k]] − 2·|dot[p[k], k]| + nr[k]`, optimal sign per
+/// permutation closed-form). For `K ≥ 9`: Jonker-Volgenant linear assignment
+/// on `-|aᵀ·reference|`, `O(K³)`. Both paths return the global optimum;
+/// **permutation at exact cost ties is implementation-defined** and may
+/// differ between the two paths.
 ///
 /// # Errors
 /// Same as [`crate::orthogonal`].
@@ -41,21 +86,6 @@ pub fn signed_permutation(
     reference: MatRef<'_, f64>,
     check_finite: bool,
 ) -> Result<SignedPermutationAlignment, ProcrustesError> {
-    fn heap_permute(buf: &mut Vec<usize>, n: usize, on_perm: &mut dyn FnMut(&[usize])) {
-        if n == 1 {
-            on_perm(buf);
-            return;
-        }
-        for i in 0..n {
-            heap_permute(buf, n - 1, on_perm);
-            if n % 2 == 0 {
-                buf.swap(i, n - 1);
-            } else {
-                buf.swap(0, n - 1);
-            }
-        }
-    }
-
     let (a_rows, a_cols) = (a.nrows(), a.ncols());
     let (ref_rows, ref_cols) = (reference.nrows(), reference.ncols());
 
@@ -103,36 +133,26 @@ pub fn signed_permutation(
         nr[i] = sr;
     }
 
-    // Brute-force enumerate K! permutations. perm[k_out] names the source
-    // column of `a` that maps onto reference[:, k_out]. Optimal sign per
-    // output column k_out is sign(dot[perm[k_out], k_out]); cost-per-k
-    // simplifies to nb[perm[k]] − 2·|dot[perm[k], k]| + nr[k].
-    let mut perm: Vec<usize> = (0..k).collect();
-    let mut best_assigned: Vec<usize> = perm.clone();
-    let mut best_signs: Vec<f64> = vec![1.0; k];
-    let mut best_cost = f64::INFINITY;
-    let mut signs_scratch = vec![0.0_f64; k];
-
-    let mut on_perm = |p: &[usize]| {
-        let mut cost = 0.0;
-        for kk in 0..k {
-            let d_pk = dot[p[kk] * k + kk];
-            cost += nb[p[kk]] - 2.0 * d_pk.abs() + nr[kk];
-            signs_scratch[kk] = if d_pk >= 0.0 { 1.0 } else { -1.0 };
-        }
-        if cost < best_cost {
-            best_cost = cost;
-            best_assigned.clear();
-            best_assigned.extend_from_slice(p);
-            best_signs.clone_from(&signs_scratch);
-        }
+    let assigned = if k <= BRUTE_FORCE_CUTOFF {
+        brute_force_assign(&dot, k)
+    } else {
+        crate::lap::solve_max_abs(&dot, k)
     };
-    heap_permute(&mut perm, k, &mut on_perm);
 
-    let residual_frobenius = best_cost.max(0.0).sqrt();
+    // Compute signs and cost in a single for-loop accumulator (same operand
+    // order and operations as the original closure, preserving bit parity).
+    let mut cost = 0.0;
+    let mut signs = vec![0.0_f64; k];
+    for kk in 0..k {
+        let d_pk = dot[assigned[kk] * k + kk];
+        cost += nb[assigned[kk]] - 2.0 * d_pk.abs() + nr[kk];
+        signs[kk] = if d_pk >= 0.0 { 1.0 } else { -1.0 };
+    }
+    let residual_frobenius = cost.max(0.0).sqrt();
+
     Ok(SignedPermutationAlignment {
-        assigned: best_assigned,
-        signs: best_signs,
+        assigned,
+        signs,
         residual_frobenius,
     })
 }
@@ -287,23 +307,43 @@ mod tests {
         let _ = signed_permutation(a.as_ref(), reference.as_ref(), false);
     }
 
-    /// Informational: prints wall-times for K ∈ {4, 6, 8, 10}. Skipped if
-    /// `PROCRUSTES_SKIP_TIMING` is set. No assertions — populates docs.
     #[test]
-    fn print_runtime_table() {
+    #[allow(clippy::cast_precision_loss)]
+    fn lap_matches_brute_force_at_k_9_through_11() {
         use rand::SeedableRng;
-        if std::env::var_os("PROCRUSTES_SKIP_TIMING").is_some() {
-            return;
-        }
-        for &k in &[4_usize, 6, 8, 10] {
-            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x00C0_FFEE);
-            let m = 32;
-            let a = Mat::<f64>::from_fn(m, k, |_, _| rand::Rng::gen_range(&mut rng, -1.0..1.0));
-            let reference = a.clone();
-            let start = std::time::Instant::now();
-            let _ = signed_permutation(a.as_ref(), reference.as_ref(), false).unwrap();
-            let dur = start.elapsed();
-            eprintln!("signed_permutation K={k}: {dur:?}");
+
+        for &k in &[9_usize, 10, 11] {
+            for seed in 0_u64..5 {
+                let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+                let m = 32;
+                let a = Mat::<f64>::from_fn(m, k, |_, _| rand::Rng::gen_range(&mut rng, -1.0..1.0));
+                let reference =
+                    Mat::<f64>::from_fn(m, k, |_, _| rand::Rng::gen_range(&mut rng, -1.0..1.0));
+
+                // Replicate the dot-precompute from signed_permutation (same arithmetic, same order).
+                let mut dot = vec![0.0_f64; k * k];
+                for i in 0..k {
+                    for j in 0..k {
+                        let mut s = 0.0;
+                        for r in 0..m {
+                            s += a[(r, i)] * reference[(r, j)];
+                        }
+                        dot[i * k + j] = s;
+                    }
+                }
+
+                let bf_assigned = brute_force_assign(&dot, k);
+                let jv_assigned = crate::lap::solve_max_abs(&dot, k);
+
+                // Compute Σ_k |dot[p[k], k]| for both — equal optima ⇒ equal cost.
+                let bf_score: f64 = (0..k).map(|kk| dot[bf_assigned[kk] * k + kk].abs()).sum();
+                let jv_score: f64 = (0..k).map(|kk| dot[jv_assigned[kk] * k + kk].abs()).sum();
+
+                assert!(
+                    (bf_score - jv_score).abs() < 1e-12,
+                    "K={k} seed={seed}: bf score {bf_score} vs jv score {jv_score}",
+                );
+            }
         }
     }
 }

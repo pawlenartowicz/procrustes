@@ -125,3 +125,74 @@ fn bit_parity_signed_permutation() {
         "residual_frobenius bits drift (faer or arithmetic changed)"
     );
 }
+
+#[test]
+#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::float_cmp)] // intentional bit-exact equality check for all-distinct sanity
+fn bit_parity_signed_permutation_jv_path() {
+    // K=10 forces the JV path (K > BRUTE_FORCE_CUTOFF=8).
+    // Construct a deterministic input with a unique optimum: integer-valued
+    // `a` and `reference` chosen so |dot[i, j]| values are all distinct,
+    // eliminating tie-breaking ambiguity between paths.
+
+    // Construction: 24×10 integer-valued `a` from a fixed RNG seed; reference
+    // is built by applying a known signed permutation of a's columns plus
+    // small integer drift, ensuring a unique winning (perm, signs) pair.
+
+    use rand::Rng;
+    use rand::SeedableRng;
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0xBEEF_CAFE_F00D_1234);
+    let m = 24;
+    let k = 10;
+
+    // Integer entries in [-9, 9] so |dot[i, j]| values land at integers from
+    // sums of integer products — distinct |dot| values are likely; we add a
+    // small position-dependent drift below to break any residual ties.
+    let a = Mat::<f64>::from_fn(m, k, |_, _| f64::from(rng.gen_range(-9_i32..=9)));
+
+    let true_perm: Vec<usize> = vec![3, 7, 0, 9, 1, 5, 8, 2, 6, 4];
+    let true_signs: Vec<f64> = vec![1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
+
+    let reference = Mat::<f64>::from_fn(m, k, |i, j| {
+        true_signs[j] * a[(i, true_perm[j])] + 0.001 * ((i as f64) + 0.5 * (j as f64))
+    });
+
+    // Sanity: ensure all |dot[i, j]| values are distinct (tie-elimination check).
+    {
+        let mut dot_abs = Vec::with_capacity(k * k);
+        for i in 0..k {
+            for j in 0..k {
+                let mut s = 0.0;
+                for r in 0..m {
+                    s += a[(r, i)] * reference[(r, j)];
+                }
+                dot_abs.push(s.abs());
+            }
+        }
+        let mut sorted = dot_abs.clone();
+        sorted.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        let mut all_distinct = true;
+        for w in sorted.windows(2) {
+            if w[0] == w[1] {
+                all_distinct = false;
+                break;
+            }
+        }
+        assert!(
+            all_distinct,
+            "construction failed to produce all-distinct |dot| values — adjust seed/integers/drift"
+        );
+    }
+
+    let aln = signed_permutation(a.as_ref(), reference.as_ref(), false).unwrap();
+
+    // Pinned outputs captured on first run (x86_64-linux, faer 0.24.0, JV path K=10).
+    assert_eq!(aln.assigned, vec![3_usize, 7, 0, 9, 1, 5, 8, 2, 6, 4]);
+    assert_eq!(aln.signs, vec![1.0_f64, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0]);
+    let expected_residual_bits: u64 = 0x3fce_a89a_5bab_157c;
+    assert_eq!(
+        aln.residual_frobenius.to_bits(),
+        expected_residual_bits,
+        "residual_frobenius bits drift (JV path arithmetic or faer changed)"
+    );
+}
