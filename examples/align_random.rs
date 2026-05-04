@@ -46,7 +46,10 @@ fn main() {
         .expect("signed permutation");
     println!("signed_permutation: assigned = {:?}", sp.assigned);
     println!("signed_permutation: signs    = {:?}", sp.signs);
-    println!("signed_permutation: residual_F = {:.3e}", sp.residual_frobenius);
+    println!(
+        "signed_permutation: residual_F = {:.3e}",
+        sp.residual_frobenius
+    );
 
     assert!(sp.residual_frobenius < 1e-10);
 }

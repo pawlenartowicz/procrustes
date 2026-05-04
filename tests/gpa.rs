@@ -158,8 +158,7 @@ fn random_orthogonal_perturbed_inputs_orthogonal_aligner() {
 
     // Consensus equals base up to a global rotation — verify via one
     // additional orthogonal alignment.
-    let final_aln =
-        procrustes::orthogonal(aln.consensus.as_ref(), base.as_ref(), false).unwrap();
+    let final_aln = procrustes::orthogonal(aln.consensus.as_ref(), base.as_ref(), false).unwrap();
     let residual = final_aln.residual_frobenius(aln.consensus.as_ref(), base.as_ref());
     assert!(residual < 1e-8, "consensus-vs-base residual = {residual}");
 }
@@ -183,11 +182,7 @@ fn signed_permutation_aligner_recovers_alignment() {
     ];
 
     let inputs_owned: Vec<Mat<f64>> = (0..4)
-        .map(|n| {
-            Mat::<f64>::from_fn(m, k, |i, j| {
-                signs_arr[n][j] * base[(i, perms[n][j])]
-            })
-        })
+        .map(|n| Mat::<f64>::from_fn(m, k, |i, j| signs_arr[n][j] * base[(i, perms[n][j])]))
         .collect();
     let mat_refs: Vec<MatRef<'_, f64>> = inputs_owned.iter().map(Mat::as_ref).collect();
 

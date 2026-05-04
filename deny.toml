@@ -1,0 +1,44 @@
+[advisories]
+yanked = "deny"
+# Silenced advisories. Each entry needs a written justification — if the
+# rationale isn't durable, leave it firing instead.
+ignore = [
+    # `paste` (proc-macro) was archived by its author in late 2024. Build-time
+    # only, no runtime exposure. Transitive via faer 0.24 → gemm/pulp/qd →
+    # paste; unfixable from procrustes. Remove this entry when faer drops
+    # the `paste` dep (track upstream).
+    "RUSTSEC-2024-0436",
+]
+
+[licenses]
+# Only the licenses actually present in the dep graph (trimmed to avoid
+# allowlist rot — do not pre-allow licenses that don't appear).
+#
+# Verified via `cargo deny list` on 2026-05-04 (cargo-deny 0.19.4):
+#   MIT, Apache-2.0, BSD-2-Clause, Unicode-3.0
+#
+# Licenses that appear in the list but are not required here because all
+# affected crates are dual- or tri-licensed with MIT or Apache-2.0:
+#   Apache-2.0 WITH LLVM-exception  (wasi, wasip2, wit-bindgen — OR MIT)
+#   BSD-2-Clause                    (zerocopy, zerocopy-derive — OR MIT)
+#   LGPL-2.1-or-later               (r-efi — OR MIT)
+#   Unlicense                       (byteorder, memchr, walkdir, … — OR MIT)
+#   Zlib                            (bytemuck — OR MIT)
+#
+# Exception: atomic-wait is solely BSD-2-Clause and unicode-ident requires
+# Unicode-3.0 as a mandatory conjunct, so those two must be listed.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "Unicode-3.0",
+]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

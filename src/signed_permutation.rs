@@ -607,9 +607,7 @@ mod tests {
         eprintln!(
             "Reminder: parity tests at K ∈ {{9, 10}} (`lap_matches_brute_force_at_k_9_and_10`)"
         );
-        eprintln!(
-            "and K=11 (`lap_matches_brute_force_at_k_11`, ignored by default) require the"
-        );
+        eprintln!("and K=11 (`lap_matches_brute_force_at_k_11`, ignored by default) require the");
         eprintln!(
             "brute path to be callable directly via `brute_force_assign`. They do not depend"
         );

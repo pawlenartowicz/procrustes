@@ -188,7 +188,10 @@ fn bit_parity_signed_permutation_jv_path() {
 
     // Pinned outputs captured on first run (x86_64-linux, faer 0.24.0, JV path K=10).
     assert_eq!(aln.assigned, vec![3_usize, 7, 0, 9, 1, 5, 8, 2, 6, 4]);
-    assert_eq!(aln.signs, vec![1.0_f64, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0]);
+    assert_eq!(
+        aln.signs,
+        vec![1.0_f64, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0]
+    );
     let expected_residual_bits: u64 = 0x3fce_a89a_5bab_157c;
     assert_eq!(
         aln.residual_frobenius.to_bits(),

@@ -42,16 +42,37 @@ pub(crate) fn solve_max_abs(dot: &[f64], k: usize) -> Vec<usize> {
     let mut in_col: Vec<usize> = Vec::with_capacity(k);
     let mut in_row: Vec<usize> = vec![0; k];
 
-    ccrrt(&lap_cost, k, &mut free_rows, &mut v, &mut in_col, &mut in_row);
+    ccrrt(
+        &lap_cost,
+        k,
+        &mut free_rows,
+        &mut v,
+        &mut in_col,
+        &mut in_row,
+    );
 
     let mut i = 0;
     while !free_rows.is_empty() && i < 2 {
-        carr(&lap_cost, k, &mut free_rows, &mut v, &mut in_col, &mut in_row);
+        carr(
+            &lap_cost,
+            k,
+            &mut free_rows,
+            &mut v,
+            &mut in_col,
+            &mut in_row,
+        );
         i += 1;
     }
 
     if !free_rows.is_empty() {
-        ca(&lap_cost, k, &mut free_rows, &mut v, &mut in_col, &mut in_row);
+        ca(
+            &lap_cost,
+            k,
+            &mut free_rows,
+            &mut v,
+            &mut in_col,
+            &mut in_row,
+        );
     }
 
     // After JV: in_col[j] = row assigned to column j (col→row, y-array).
@@ -243,8 +264,17 @@ fn find_path_dense(
         }
 
         if final_j.is_none() {
-            final_j =
-                scan_dense(cost, k, v, in_col, &mut lo, &mut hi, &mut d, &mut collist, pred);
+            final_j = scan_dense(
+                cost,
+                k,
+                v,
+                in_col,
+                &mut lo,
+                &mut hi,
+                &mut d,
+                &mut collist,
+                pred,
+            );
         }
     }
 
@@ -332,12 +362,7 @@ fn find_dense(k: usize, lo: usize, d: &[f64], collist: &mut [usize]) -> usize {
 // Minimum and second minimum reduced cost for row `row_i` over all columns.
 // Ported from find_umins_plain in lapjv-rust.
 #[allow(clippy::many_single_char_names)]
-fn find_umins(
-    cost: &[f64],
-    k: usize,
-    v: &[f64],
-    row_i: usize,
-) -> (f64, f64, usize, Option<usize>) {
+fn find_umins(cost: &[f64], k: usize, v: &[f64], row_i: usize) -> (f64, f64, usize, Option<usize>) {
     let row = &cost[row_i * k..(row_i + 1) * k];
     let mut umin = row[0] - v[0];
     let mut usubmin = f64::INFINITY;
@@ -452,5 +477,4 @@ mod tests {
              a self-inverse return value would mask row/col transposition bugs in ccrrt"
         );
     }
-
 }

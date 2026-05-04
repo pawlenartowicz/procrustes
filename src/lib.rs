@@ -27,7 +27,9 @@ mod signed_permutation;
 
 pub use gpa::{generalized, GpaAlignment, GpaInit, GpaOptions, InnerAligner};
 pub use orthogonal::{orthogonal, rotation_only, OrthogonalAlignment};
-pub use signed_permutation::{sign_align, signed_permutation, SignAlignment, SignedPermutationAlignment};
+pub use signed_permutation::{
+    sign_align, signed_permutation, SignAlignment, SignedPermutationAlignment,
+};
 
 /// `true` iff every entry of `x` is finite (neither NaN nor ±∞). Walks
 /// column-major; short-circuits on the first non-finite value.

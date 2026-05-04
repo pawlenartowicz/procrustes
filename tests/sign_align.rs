@@ -24,7 +24,11 @@ fn one_column_flipped() {
     let reference = Mat::<f64>::from_fn(5, 3, |i, j| (i as f64) * 0.7 + (j as f64) + 1.0);
     let a = Mat::<f64>::from_fn(5, 3, |i, j| {
         let x = (i as f64) * 0.7 + (j as f64) + 1.0;
-        if j == 1 { -x } else { x }
+        if j == 1 {
+            -x
+        } else {
+            x
+        }
     });
     let aln = sign_align(a.as_ref(), reference.as_ref(), true).unwrap();
     assert_eq!(aln.signs, vec![1.0, -1.0, 1.0]);

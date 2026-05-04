@@ -69,7 +69,11 @@ fn reflection_input_returns_proper_rotation_with_larger_residual() {
     ];
     let reference = Mat::<f64>::from_fn(5, 3, |i, j| ref_data[i][j]);
     let a = Mat::<f64>::from_fn(5, 3, |i, j| {
-        if j == 0 { -ref_data[i][j] } else { ref_data[i][j] }
+        if j == 0 {
+            -ref_data[i][j]
+        } else {
+            ref_data[i][j]
+        }
     });
 
     let aln_o = orthogonal(a.as_ref(), reference.as_ref(), false).unwrap();
@@ -77,8 +81,14 @@ fn reflection_input_returns_proper_rotation_with_larger_residual() {
 
     let det_o = det(aln_o.rotation.as_ref());
     let det_r = det(aln_r.rotation.as_ref());
-    assert!((det_o + 1.0).abs() < 1e-10, "orthogonal det = {det_o} want -1");
-    assert!((det_r - 1.0).abs() < 1e-10, "rotation_only det = {det_r} want +1");
+    assert!(
+        (det_o + 1.0).abs() < 1e-10,
+        "orthogonal det = {det_o} want -1"
+    );
+    assert!(
+        (det_r - 1.0).abs() < 1e-10,
+        "rotation_only det = {det_r} want +1"
+    );
 
     let res_o = aln_o.residual_frobenius(a.as_ref(), reference.as_ref());
     let res_r = aln_r.residual_frobenius(a.as_ref(), reference.as_ref());
@@ -94,7 +104,8 @@ fn det_is_plus_one_for_random_inputs_across_k() {
     for k in [2_usize, 3, 4, 5, 8] {
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0x00C0_FFEE_u64 + k as u64);
         let a = Mat::<f64>::from_fn(16, k, |_, _| rand::Rng::gen_range(&mut rng, -1.0..1.0));
-        let reference = Mat::<f64>::from_fn(16, k, |_, _| rand::Rng::gen_range(&mut rng, -1.0..1.0));
+        let reference =
+            Mat::<f64>::from_fn(16, k, |_, _| rand::Rng::gen_range(&mut rng, -1.0..1.0));
         let aln = rotation_only(a.as_ref(), reference.as_ref(), false).unwrap();
         let d = det(aln.rotation.as_ref());
         assert!(

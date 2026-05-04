@@ -203,9 +203,8 @@ pub fn rotation_only(
         // Flip sign of the last column of U, then recompute R = U' · Vᵀ.
         // Materialise U into an owned Mat so we can mutate the column.
         let last = k - 1;
-        let u_flipped = Mat::<f64>::from_fn(k, k, |i, j| {
-            if j == last { -u[(i, j)] } else { u[(i, j)] }
-        });
+        let u_flipped =
+            Mat::<f64>::from_fn(k, k, |i, j| if j == last { -u[(i, j)] } else { u[(i, j)] });
         matmul(
             rotation.as_mut(),
             Accum::Replace,
