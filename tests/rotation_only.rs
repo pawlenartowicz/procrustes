@@ -134,6 +134,23 @@ fn empty_input_returns_error() {
 }
 
 #[test]
+#[allow(clippy::cast_precision_loss)]
+fn k_eq_1_always_returns_identity() {
+    // SO(1) = {[[1.0]]}, so even when a sign flip would minimize residual,
+    // rotation_only must return the identity rotation.
+    let a = Mat::<f64>::from_fn(5, 1, |i, _| (i as f64) - 2.0);
+    let reference = Mat::<f64>::from_fn(5, 1, |i, _| -((i as f64) - 2.0));
+    let aln = rotation_only(a.as_ref(), reference.as_ref(), false).unwrap();
+    assert!(
+        (aln.rotation[(0, 0)] - 1.0).abs() < 1e-12,
+        "K=1 rotation_only must return [[1.0]], got [[{}]]",
+        aln.rotation[(0, 0)]
+    );
+    let d = det(aln.rotation.as_ref());
+    assert!((d - 1.0).abs() < 1e-12, "det = {d}");
+}
+
+#[test]
 fn nan_with_check_finite_true_returns_error() {
     let mut a = Mat::<f64>::zeros(3, 2);
     a[(1, 1)] = f64::NAN;

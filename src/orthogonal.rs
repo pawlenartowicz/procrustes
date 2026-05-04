@@ -3,7 +3,7 @@
 use faer::linalg::matmul::matmul;
 use faer::{Accum, Mat, MatRef, Par};
 
-use crate::ProcrustesError;
+use crate::{is_all_finite, ProcrustesError};
 
 /// Solve `min_R ‖a · R − reference‖_F` over orthogonal `K×K` `R`.
 ///
@@ -100,17 +100,6 @@ pub fn orthogonal(
     Ok(OrthogonalAlignment { rotation, scale })
 }
 
-fn is_all_finite(x: MatRef<'_, f64>) -> bool {
-    for j in 0..x.ncols() {
-        for i in 0..x.nrows() {
-            if !x[(i, j)].is_finite() {
-                return false;
-            }
-        }
-    }
-    true
-}
-
 /// Orthogonal Procrustes restricted to proper rotations (`det(R) = +1`,
 /// `R ∈ SO(K)`).
 ///
@@ -122,6 +111,10 @@ fn is_all_finite(x: MatRef<'_, f64>) -> bool {
 /// Use this when reflection is physically meaningless (chemistry, physics,
 /// rigid-body alignment) or when sign convention must be preserved across
 /// independent calls.
+///
+/// At `K = 1`, `SO(1) = {[[1.0]]}`, so the returned rotation is always the
+/// identity regardless of input — even when a sign flip would minimize the
+/// residual.
 ///
 /// `scale` in the returned [`OrthogonalAlignment`] is recomputed against
 /// the (possibly flipped) `R`, so [`OrthogonalAlignment::residual_frobenius`]

@@ -2,7 +2,7 @@
 
 use faer::MatRef;
 
-use crate::ProcrustesError;
+use crate::{is_all_finite, ProcrustesError};
 
 /// Result of [`sign_align`].
 ///
@@ -258,17 +258,6 @@ pub fn signed_permutation(
         signs,
         residual_frobenius,
     })
-}
-
-fn is_all_finite(x: MatRef<'_, f64>) -> bool {
-    for j in 0..x.ncols() {
-        for i in 0..x.nrows() {
-            if !x[(i, j)].is_finite() {
-                return false;
-            }
-        }
-    }
-    true
 }
 
 /// Result of [`signed_permutation`].

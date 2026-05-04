@@ -20,6 +20,7 @@ procrustes = "0.1"
 - **`signed_permutation`** — exact discrete alignment of columns and per-column signs. Auto-routes by K: brute-force `O(K!·K)` enumeration for `K ≤ 8` (small-K bit-parity preserved), Jonker-Volgenant linear assignment `O(K³)` for `K ≥ 9` on the cost matrix `C[i, j] = -|⟨a[:, i], reference[:, j]⟩|`. Both paths return the global optimum. Use when columns are abstractly indexed (PLS components, ICA sources, eigenmaps) and you need a discrete match rather than a rotation.
 - **`rotation_only`** — orthogonal Procrustes restricted to proper rotations (`det(R) = +1`, `R ∈ SO(K)`). Same SVD path as `orthogonal`; flips the last column of `U` if the SVD-derived rotation is a reflection. Use when reflection is physically meaningless (chemistry, physics, rigid-body alignment) or sign convention must be preserved across independent calls.
 - **`sign_align`** — sign-only alignment, `O(M·K)` closed form. Per-column choice `s[k] = sign(⟨a[:, k], reference[:, k]⟩)`. Use when columns are already in the same canonical order as `reference` and only per-column sign is arbitrary — the typical PLS bootstrap pattern. For a general column-and-sign search, use `signed_permutation`.
+- **`generalized`** — iterative consensus alignment of `N` matrices to a shared mean (GPA). See [Generalised Procrustes Analysis (GPA)](#generalised-procrustes-analysis-gpa) below.
 
 ## Convention
 
@@ -65,6 +66,16 @@ assert!(residual < 1e-10);
 ```
 
 For the discrete case, see `signed_permutation` in the [API docs](https://docs.rs/procrustes).
+
+### Generalised Procrustes Analysis (GPA)
+
+`generalized` aligns `N` matrices to a common consensus via iterative
+inner Procrustes calls. Use it instead of fixed-reference alignment when
+the reference itself is a noisy estimate (e.g. PLS bootstrap CIs anchored
+to the original-sample fit). The inner aligner is selected via
+`InnerAligner` — `Orthogonal` is the morphometric default; use
+`SignedPermutation` when component order can vary across inputs (PLS
+bootstrap pattern).
 
 ## License
 

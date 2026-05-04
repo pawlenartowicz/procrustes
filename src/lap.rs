@@ -10,10 +10,6 @@
 //! Algorithm for Dense and Sparse Linear Assignment Problems", *Computing*
 //! 38, 325-340 (1987).
 
-// Private helpers are used by solve_max_abs, which signed_permutation calls
-// for K ≥ 9.
-#![allow(dead_code)]
-
 /// Solve `argmax_p Σ_k |dot[p[k]·k + k]|` over permutations p of `0..k`.
 ///
 /// `dot` is a row-major K×K buffer with `dot[i*k + j] = ⟨a[:, i], reference[:, j]⟩`.
