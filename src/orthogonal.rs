@@ -90,9 +90,10 @@ pub fn orthogonal(
 
     // scale = nuclear norm ‖M_buf‖_* = sum of singular values
     //       = trace(M_buf · Rᵀ) = sum_{i,j} M_buf[i,j] · R[i,j]   (O(K²)).
+    // Column-major outer loop matches faer's storage layout.
     let mut scale = 0.0;
-    for i in 0..k {
-        for j in 0..k {
+    for j in 0..k {
+        for i in 0..k {
             scale += m_buf[(i, j)] * rotation[(i, j)];
         }
     }
@@ -218,10 +219,10 @@ pub fn rotation_only(
     // Recompute scale = trace(M · Rᵀ) = Σ_{i,j} M[i,j] · R[i,j] on the
     // possibly-flipped R. The cached identity ‖a·R − ref‖² = ‖a‖² + ‖ref‖² − 2·scale
     // holds for *any* orthogonal R, so OrthogonalAlignment::residual_frobenius
-    // remains valid.
+    // remains valid. Column-major outer loop matches faer's storage layout.
     let mut scale = 0.0;
-    for i in 0..k {
-        for j in 0..k {
+    for j in 0..k {
+        for i in 0..k {
             scale += m_buf[(i, j)] * rotation[(i, j)];
         }
     }

@@ -130,7 +130,7 @@ fn bit_parity_signed_permutation() {
 #[allow(clippy::cast_precision_loss)]
 #[allow(clippy::float_cmp)] // intentional bit-exact equality check for all-distinct sanity
 fn bit_parity_signed_permutation_jv_path() {
-    // K=10 forces the JV path (K > BRUTE_FORCE_CUTOFF=8).
+    // K=10 forces the JV path (K > BRUTE_FORCE_CUTOFF=3).
     // Construct a deterministic input with a unique optimum: integer-valued
     // `a` and `reference` chosen so |dot[i, j]| values are all distinct,
     // eliminating tie-breaking ambiguity between paths.

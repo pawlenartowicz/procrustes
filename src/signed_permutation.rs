@@ -107,7 +107,7 @@ pub fn sign_align(
     })
 }
 
-const BRUTE_FORCE_CUTOFF: usize = 8;
+const BRUTE_FORCE_CUTOFF: usize = 3;
 
 /// Brute-force max-|dot| assignment by `K!` permutation enumeration.
 ///
@@ -119,18 +119,23 @@ const BRUTE_FORCE_CUTOFF: usize = 8;
 /// parity unit test inside this module (Task 3) can call it directly.
 #[allow(clippy::many_single_char_names)]
 pub(crate) fn brute_force_assign(dot: &[f64], k: usize) -> Vec<usize> {
-    fn heap_permute(buf: &mut Vec<usize>, n: usize, on_perm: &mut dyn FnMut(&[usize])) {
+    // Heap's algorithm, textbook variant: one initial recurse, then n−1
+    // (swap, recurse) pairs. Equivalent enumeration order to a `0..n` loop
+    // that recurses-then-swaps, but without the wasted trailing swap. Generic
+    // over `F` so the leaf score loop inlines through the recursion.
+    fn heap_permute<F: FnMut(&[usize])>(buf: &mut [usize], n: usize, on_perm: &mut F) {
         if n == 1 {
             on_perm(buf);
             return;
         }
-        for i in 0..n {
-            heap_permute(buf, n - 1, on_perm);
+        heap_permute(buf, n - 1, on_perm);
+        for i in 0..n - 1 {
             if n % 2 == 0 {
                 buf.swap(i, n - 1);
             } else {
                 buf.swap(0, n - 1);
             }
+            heap_permute(buf, n - 1, on_perm);
         }
     }
 
@@ -138,6 +143,9 @@ pub(crate) fn brute_force_assign(dot: &[f64], k: usize) -> Vec<usize> {
     let mut best_assigned: Vec<usize> = perm.clone();
     let mut best_score = f64::NEG_INFINITY;
 
+    // Precomputing `|dot|` would save K abs-ops per leaf but the K² Vec
+    // allocation cost dominates at the production cutoff (K ≤ 3, 6 perms);
+    // measured net-slower at every K ≤ 10. Inline the abs() instead.
     let mut on_perm = |p: &[usize]| {
         let mut score = 0.0;
         for kk in 0..k {
@@ -145,8 +153,7 @@ pub(crate) fn brute_force_assign(dot: &[f64], k: usize) -> Vec<usize> {
         }
         if score > best_score {
             best_score = score;
-            best_assigned.clear();
-            best_assigned.extend_from_slice(p);
+            best_assigned.copy_from_slice(p);
         }
     };
     heap_permute(&mut perm, k, &mut on_perm);
@@ -158,9 +165,9 @@ pub(crate) fn brute_force_assign(dot: &[f64], k: usize) -> Vec<usize> {
 ///
 /// # Algorithm
 ///
-/// For `K ≤ 8`: brute-force enumeration of `K!` permutations
+/// For `K ≤ 3`: brute-force enumeration of `K!` permutations
 /// (cost-per-cell `nb[p[k]] − 2·|dot[p[k], k]| + nr[k]`, optimal sign per
-/// permutation closed-form). For `K ≥ 9`: Jonker-Volgenant linear assignment
+/// permutation closed-form). For `K ≥ 4`: Jonker-Volgenant linear assignment
 /// on `-|aᵀ·reference|`, `O(K³)`. Both paths return the global optimum;
 /// **permutation at exact cost ties is implementation-defined** and may
 /// differ between the two paths.
@@ -399,12 +406,11 @@ mod tests {
         let _ = signed_permutation(a.as_ref(), reference.as_ref(), false);
     }
 
-    #[test]
     #[allow(clippy::cast_precision_loss)]
-    fn lap_matches_brute_force_at_k_9_through_11() {
+    fn parity_check_brute_vs_jv(ks: &[usize]) {
         use rand::SeedableRng;
 
-        for &k in &[9_usize, 10, 11] {
+        for &k in ks {
             for seed in 0_u64..5 {
                 let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
                 let m = 32;
@@ -437,5 +443,176 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn lap_matches_brute_force_at_k_9_and_10() {
+        // K=9, 10 already cover the asymptotic JV-vs-brute parity invariant
+        // and run in well under a second in debug mode. K=11 is split into
+        // a separate `#[ignore]`d release-only test below.
+        parity_check_brute_vs_jv(&[9_usize, 10]);
+    }
+
+    #[test]
+    #[ignore = "slow: K=11 brute is ~1s release / ~60s debug; run with --release --ignored to verify"]
+    fn lap_matches_brute_force_at_k_11() {
+        parity_check_brute_vs_jv(&[11_usize]);
+    }
+
+    /// Maintainer-only calibration: time `brute_force_assign` and
+    /// `lap::solve_max_abs` across `K ∈ [3, 12]` and recommend a
+    /// `BRUTE_FORCE_CUTOFF` value for `src/signed_permutation.rs`.
+    ///
+    /// Run with:
+    /// ```text
+    /// cargo test --release --lib -- --ignored --nocapture calibrate_brute_force_cutoff
+    /// ```
+    ///
+    /// Prints a per-K wall-time table plus a single `RECOMMENDATION:` line.
+    /// Does **not** mutate the constant — read the output, hand-edit
+    /// `BRUTE_FORCE_CUTOFF` above, and cite the run in the commit message.
+    #[test]
+    #[ignore = "maintainer-only: run with --release before each tag to set BRUTE_FORCE_CUTOFF"]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::many_single_char_names,
+        clippy::too_many_lines,
+        clippy::unreadable_literal
+    )]
+    fn calibrate_brute_force_cutoff() {
+        use rand::SeedableRng;
+        use std::time::Instant;
+
+        // M = 64 is a midpoint sample size: large enough for cache effects
+        // to look realistic, small enough to keep total wall-time under
+        // ~30 s. K dominates wall-time at the brute-force end; M only
+        // affects the up-front dot-matrix accumulation that both paths
+        // share. Future maintainers can sweep M too if they care.
+        const M: usize = 64;
+        const SEED: u64 = 0xC0_FF_EE;
+        // (K, iteration count). Counts target ≈ 100 ms per cell at small
+        // K and ≤ ~15 s at K = 12 where one brute enumeration is ~5 s.
+        const SCHEDULE: &[(usize, usize)] = &[
+            (3, 1000),
+            (4, 1000),
+            (5, 1000),
+            (6, 1000),
+            (7, 1000),
+            (8, 1000),
+            (9, 500),
+            (10, 100),
+            (11, 21),
+            (12, 3),
+        ];
+
+        fn median_us<F: FnMut()>(iters: usize, mut f: F) -> f64 {
+            // One discarded warm-up iteration to seed branch predictor / caches.
+            f();
+            let mut times = Vec::with_capacity(iters);
+            for _ in 0..iters {
+                let t = Instant::now();
+                f();
+                times.push(t.elapsed().as_secs_f64() * 1e6);
+            }
+            times.sort_by(f64::total_cmp);
+            times[times.len() / 2]
+        }
+
+        if cfg!(debug_assertions) {
+            eprintln!(
+                "WARNING: run with --release; debug-mode timings invert the brute/JV crossover."
+            );
+            return;
+        }
+
+        let host = std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".to_string());
+
+        eprintln!("=== procrustes BRUTE_FORCE_CUTOFF calibration ===");
+        eprintln!("host: {host}     opt-level: 3 (release)     M = {M}");
+        eprintln!();
+        eprintln!("  K    brute (µs)    jv (µs)    brute / jv");
+
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(SEED);
+        let mut brute_wins = vec![false; SCHEDULE.len()];
+        let mut recommend: usize = 1;
+
+        for (idx, &(k, iters)) in SCHEDULE.iter().enumerate() {
+            let a = Mat::<f64>::from_fn(M, k, |_, _| rand::Rng::gen_range(&mut rng, -1.0..1.0));
+            let reference =
+                Mat::<f64>::from_fn(M, k, |_, _| rand::Rng::gen_range(&mut rng, -1.0..1.0));
+
+            // Precompute dot once per K — both algorithms operate on the
+            // same K×K buffer, so this matches signed_permutation's
+            // dispatch site and isolates the comparison to the assignment
+            // step itself.
+            let mut dot = vec![0.0_f64; k * k];
+            for i in 0..k {
+                for j in 0..k {
+                    let mut s = 0.0;
+                    for r in 0..M {
+                        s += a[(r, i)] * reference[(r, j)];
+                    }
+                    dot[i * k + j] = s;
+                }
+            }
+
+            let bf_us = median_us(iters, || {
+                let _assigned = brute_force_assign(&dot, k);
+            });
+            let jv_us = median_us(iters, || {
+                let _assigned = crate::lap::solve_max_abs(&dot, k);
+            });
+
+            let ratio = bf_us / jv_us;
+            eprintln!("{k:>3}    {bf_us:>10.2}    {jv_us:>7.2}    {ratio:>10.2}");
+
+            brute_wins[idx] = bf_us < jv_us; // strict: tie goes to JV
+            if brute_wins[idx] {
+                recommend = k;
+            }
+        }
+
+        eprintln!();
+
+        // Non-monotonicity: any K where brute wins after a previous K
+        // where it lost. Asymptotically K!/K³ is monotonic for K ≥ 5, so
+        // a non-monotonic stretch flags noisy small-iter cells (K = 11, 12).
+        if let Some(first_loss) = brute_wins.iter().position(|&w| !w) {
+            let bad: Vec<usize> = SCHEDULE[first_loss..]
+                .iter()
+                .enumerate()
+                .filter_map(|(j, &(k, _))| brute_wins[first_loss + j].then_some(k))
+                .collect();
+            if !bad.is_empty() {
+                eprintln!(
+                    "WARNING: non-monotonic crossover at K ∈ {bad:?}; iteration counts may be too small."
+                );
+            }
+        }
+
+        let last_idx = SCHEDULE.len() - 1;
+        if brute_wins[last_idx] {
+            eprintln!("RECOMMENDATION: cutoff > 12; extend the sweep before applying.");
+        } else if recommend == 1 {
+            eprintln!("RECOMMENDATION: const BRUTE_FORCE_CUTOFF: usize = 1;");
+            eprintln!(
+                "WARNING: brute-force lost at every measured K; bit-parity tests assume the brute"
+            );
+            eprintln!("path is reachable via dispatch and may need updating.");
+        } else {
+            eprintln!("RECOMMENDATION: const BRUTE_FORCE_CUTOFF: usize = {recommend};");
+        }
+
+        eprintln!();
+        eprintln!(
+            "Reminder: parity tests at K ∈ {{9, 10}} (`lap_matches_brute_force_at_k_9_and_10`)"
+        );
+        eprintln!(
+            "and K=11 (`lap_matches_brute_force_at_k_11`, ignored by default) require the"
+        );
+        eprintln!(
+            "brute path to be callable directly via `brute_force_assign`. They do not depend"
+        );
+        eprintln!("on the dispatch constant — leave them as-is regardless of cutoff.");
     }
 }

@@ -135,6 +135,7 @@ pub struct GpaAlignment {
 /// ```
 #[allow(clippy::many_single_char_names)]
 #[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::too_many_lines)]
 pub fn generalized(
     matrices: &[MatRef<'_, f64>],
     opts: GpaOptions,
@@ -186,7 +187,8 @@ pub fn generalized(
     }
 
     // Pre-scale to Procrustes form if requested, checking for zero-norm inputs.
-    // `scaled_storage` must outlive `inputs` because the MatRefs borrow from it.
+    // `scaled_storage` and `scaled_refs` must outlive `inputs` because the
+    // MatRefs in `scaled_refs` borrow from `scaled_storage`.
     let scaled_storage: Vec<Mat<f64>> = if opts.procrustes_form {
         let mut storage = Vec::with_capacity(matrices.len());
         for &m in matrices {
@@ -205,10 +207,13 @@ pub fn generalized(
     } else {
         Vec::new()
     };
-    let inputs: Vec<MatRef<'_, f64>> = if opts.procrustes_form {
-        scaled_storage.iter().map(Mat::as_ref).collect()
+    let scaled_refs: Vec<MatRef<'_, f64>> = scaled_storage.iter().map(Mat::as_ref).collect();
+    // Borrow `matrices` directly when no rescaling is needed; only the rescaled
+    // path requires the owned `scaled_refs` Vec.
+    let inputs: &[MatRef<'_, f64>] = if opts.procrustes_form {
+        &scaled_refs
     } else {
-        matrices.to_vec()
+        matrices
     };
 
     // --- Initialise consensus ---
@@ -217,7 +222,7 @@ pub fn generalized(
             let m = inputs[0];
             Mat::<f64>::from_fn(m.nrows(), m.ncols(), |i, j| m[(i, j)])
         }
-        GpaInit::Mean => weighted_mean(inputs.as_slice(), opts.weights.as_deref()),
+        GpaInit::Mean => weighted_mean(inputs, opts.weights.as_deref()),
     };
 
     // Scratch for the last aligned snapshot (returned on loop exhaustion).
@@ -324,24 +329,29 @@ fn weighted_mean(matrices: &[MatRef<'_, f64>], weights: Option<&[f64]>) -> Mat<f
 
     let mut out = Mat::<f64>::zeros(rows, cols);
 
-    let w_sum: f64 = match weights {
-        Some(w) => w.iter().sum(),
-        None => n as f64,
-    };
-    let inv = 1.0 / w_sum;
-
-    for (i, &m) in matrices.iter().enumerate() {
-        let wi = match weights {
-            Some(w) => w[i],
-            None => 1.0,
-        };
-        if wi == 0.0 {
-            continue;
+    match weights {
+        None => {
+            let scale = 1.0 / (n as f64);
+            for &m in matrices {
+                for j in 0..cols {
+                    for r in 0..rows {
+                        out[(r, j)] += scale * m[(r, j)];
+                    }
+                }
+            }
         }
-        let scale = wi * inv;
-        for j in 0..cols {
-            for r in 0..rows {
-                out[(r, j)] += scale * m[(r, j)];
+        Some(w) => {
+            let inv = 1.0 / w.iter().sum::<f64>();
+            for (&wi, &m) in w.iter().zip(matrices.iter()) {
+                if wi == 0.0 {
+                    continue;
+                }
+                let scale = wi * inv;
+                for j in 0..cols {
+                    for r in 0..rows {
+                        out[(r, j)] += scale * m[(r, j)];
+                    }
+                }
             }
         }
     }
